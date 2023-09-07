@@ -1,5 +1,6 @@
 package com.example.server;
 
+import com.example.server.provider.ServerInfoProvider;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.log4j.Log4j2;
@@ -13,6 +14,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @Log4j2
 public class ApplicationServer {
 	private final CuratorFramework curatorFramework;
+	private final ServerInfoProvider serverInfoProvider;
 	private       String           nodePath;
 
 	public static final String ROOT_NODE_PATH = "/loadbalancer";
@@ -20,9 +22,10 @@ public class ApplicationServer {
 
 
 	@Autowired
-	public ApplicationServer (CuratorFramework curatorFramework) {
+	public ApplicationServer (CuratorFramework curatorFramework, ServerInfoProvider serverInfoProvider, ServerInfoProvider serverInfoProvider1) {
 
 		this.curatorFramework = curatorFramework;
+		this.serverInfoProvider = serverInfoProvider1;
 	}
 
 
@@ -39,7 +42,7 @@ public class ApplicationServer {
 
 
 	private void createChildNode () {
-		String nodeData = "Node Data";
+		String nodeData = serverInfoProvider.getAddress();
 		try {
 			// Create an EPHEMERAL_SEQUENTIAL node under the root node
 			nodePath = curatorFramework.create()
