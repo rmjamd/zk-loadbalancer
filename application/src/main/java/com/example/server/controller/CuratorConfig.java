@@ -12,8 +12,9 @@ public class CuratorConfig {
 	@Value("${zookeeper.connectionString}")
 	private String zookeeperConnectionString;
 
+
 	@Bean
-	public CuratorFramework curatorFramework() {
+	public CuratorFramework curatorFramework () {
 		return CuratorFrameworkFactory.builder()
 									  .connectString(zookeeperConnectionString)
 									  .retryPolicy(new ExponentialBackoffRetry(1000, 3))

@@ -42,7 +42,7 @@ public class ApplicationServer {
 
 
 	private void createChildNode () {
-		String nodeData = serverInfoProvider.getAddress();
+		String nodeData = serverInfoProvider.getIpAddress();
 		try {
 			// Create an EPHEMERAL_SEQUENTIAL node under the root node
 			nodePath = curatorFramework.create()

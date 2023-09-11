@@ -21,7 +21,7 @@ public class ServerInfoProvider {
 	private Environment env;
 
 
-	public String getAddress () {
+	public String getIpAddress () {
 		return getIp() + ":" + env.getProperty(Properties.SERVER_PORT);
 	}
 
