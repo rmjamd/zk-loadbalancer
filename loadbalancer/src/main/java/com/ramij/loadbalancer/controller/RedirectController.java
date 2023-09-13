@@ -1,5 +1,6 @@
 package com.ramij.loadbalancer.controller;
 
+import com.ramij.hashing.ConsistentHashBuilder;
 import com.ramij.loadbalancer.constants.Constant;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,7 +13,8 @@ public class RedirectController {
 	@GetMapping("/hello")
 	public ResponseEntity <Void> sayHello () {
 		String       ip           = "localhost:8080"; //ToDo : get Ip from constient hashing,
-		String       targetUrl    = String.format(Constant.redirectUrlFormat, ip);
+//		ConsistentHashBuilder.create().addReplicas(3).build();
+		String       targetUrl    = String.format(Constant.REDIRECT_URL_FORMAT, ip);
 		RestTemplate restTemplate = new RestTemplate();
 
 		// Make an HTTP GET request to the target URL
