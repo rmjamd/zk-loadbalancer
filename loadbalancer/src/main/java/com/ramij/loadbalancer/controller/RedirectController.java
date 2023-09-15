@@ -11,17 +11,17 @@ import org.springframework.web.client.RestTemplate;
 @RestController("/api")
 public class RedirectController {
 	@GetMapping("/hello")
-	public ResponseEntity <Void> sayHello () {
-		String       ip           = "localhost:8080"; //ToDo : get Ip from constient hashing,
-//		ConsistentHashBuilder.create().addReplicas(3).build();
+	public ResponseEntity <String> sayHello () {
+		String       ip           = "localhost:5080"; //ToDo : get Ip from constient hashing,
+////		ConsistentHashBuilder.create().addReplicas(3).build();
 		String       targetUrl    = String.format(Constant.REDIRECT_URL_FORMAT, ip);
 		RestTemplate restTemplate = new RestTemplate();
 
 		// Make an HTTP GET request to the target URL
-		restTemplate.getForObject(targetUrl, String.class);
+		String response = restTemplate.getForObject(targetUrl, String.class);
 
 		// Return a 302 Found response to instruct the client to redirect
-		return new ResponseEntity <>(HttpStatus.FOUND);
+		return new ResponseEntity <>(response,HttpStatus.OK);
 	}
 
 }
