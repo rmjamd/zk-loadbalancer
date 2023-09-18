@@ -21,8 +21,9 @@ public class RedirectController {
 	@GetMapping("/hello")
 	public ResponseEntity <String> sayHello (HttpServletRequest request) {
 		String id= (String) request.getAttribute("requestId");
-		ConsistentHashing <Node> consistentHashing = ConsistentHashBuilder.create().addReplicas(3).addNode(new ServerNode("localhost",5050)).build();
-		String                   targetUrl         = String.format(Constant.REDIRECT_URL_FORMAT, consistentHashing.getNode(id));
+		ConsistentHashing <Node> consistentHashing = ConsistentHashBuilder.create().addReplicas(3).build();
+		consistentHashing.addNode(new ServerNode("localhost",8080));
+		String                   targetUrl         = String.format(Constant.REDIRECT_URL_FORMAT, consistentHashing.getNode(id).getKey());
 		RestTemplate restTemplate = new RestTemplate();
 		// Make an HTTP GET request to the target URL
 		String response = restTemplate.getForObject(targetUrl, String.class);
