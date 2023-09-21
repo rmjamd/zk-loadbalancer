@@ -1,6 +1,6 @@
 package com.ramij.loadbalancer.constants;
 
-public class Constant {
+public final class Constant {
 	private Constant () {
 	}
 

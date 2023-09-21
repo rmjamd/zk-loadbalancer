@@ -11,8 +11,17 @@ import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.recipes.cache.PathChildrenCache;
 import org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent;
 import org.apache.curator.retry.ExponentialBackoffRetry;
+import org.apache.curator.utils.ZKPaths;
+import org.apache.zookeeper.data.Stat;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+@Service
+@Component
 public class LoadBalancerServiceImpl implements LoadBalancerService {
 	@Value("${zk.host}")
 	private String zookeeperHost;
@@ -23,6 +32,8 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 
 	@Value("${server.replicas}")
 	private int noOfReplicas;
+
+	ConsistentHashing <Node> consistentHashing;
 
 
 	@Override
@@ -36,15 +47,13 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 	}
 
 
-	ConsistentHashing <Node> consistentHashing;
-
-
 	@PostConstruct
 	public void init () {
 		consistentHashing = ConsistentHashBuilder.create().addReplicas(noOfReplicas).build();
-		try (CuratorFramework curatorFramework = CuratorFrameworkFactory.newClient(zookeeperHost + zookeeperPort,
+		try (CuratorFramework curatorFramework = CuratorFrameworkFactory.newClient(zookeeperHost + ":" + zookeeperPort,
 				new ExponentialBackoffRetry(1000, 3))) {
 			curatorFramework.start();
+			addChildNode(curatorFramework);
 			PathChildrenCache pathChildrenCache = new PathChildrenCache(curatorFramework, zookeeperNodePath, true);
 			pathChildrenCache.getListenable().addListener((client, event) -> {
 				String nodeData = new String(event.getData().getData());
@@ -54,6 +63,25 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 					removeNodeFromConsistentHashing(nodeData);
 				}
 			});
+		}
+	}
+
+
+	private void addChildNode (CuratorFramework curatorFramework) {
+		try {
+			List <String> children = curatorFramework.getChildren().forPath(zookeeperNodePath);
+			for (String child : children) {
+				String childNodePath = ZKPaths.makePath(zookeeperNodePath, child);
+				byte[] bytes         = curatorFramework.getData().forPath(childNodePath);
+				Stat   stat          = curatorFramework.checkExists().forPath(childNodePath);
+				if (stat != null) {
+					String data = new String(bytes, StandardCharsets.UTF_8);
+					consistentHashing.addNode(extractServerNode(data));
+				}
+
+			}
+		} catch (Exception e) {
+			throw new RuntimeException(e);
 		}
 	}
 
@@ -69,10 +97,10 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 
 
 	private ServerNode extractServerNode (String nodeData) {
-		int    ind  = nodeData.indexOf(':');
-		String host = nodeData.substring(ind - 1);
-		int    port = Integer.parseInt(nodeData.substring(ind + 1, nodeData.length() - 1));
-		return new ServerNode(host, port);
+		String[] parts = nodeData.split(":");
+		String host = parts[0];
+		String port = parts[1];
+		return new ServerNode(host, Integer.parseInt(port));
 
 
 	}
