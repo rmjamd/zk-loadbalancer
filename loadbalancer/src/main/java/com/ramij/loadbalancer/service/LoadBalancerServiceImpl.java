@@ -6,22 +6,27 @@ import com.ramij.hashing.nodes.Node;
 import com.ramij.hashing.nodes.ServerNode;
 import com.ramij.loadbalancer.constants.Constant;
 import jakarta.annotation.PostConstruct;
+import lombok.extern.log4j.Log4j2;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
-import org.apache.curator.framework.recipes.cache.PathChildrenCache;
+import org.apache.curator.framework.recipes.cache.ChildData;
+import org.apache.curator.framework.recipes.cache.CuratorCache;
+import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
 import org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.utils.ZKPaths;
 import org.apache.zookeeper.data.Stat;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Service
-@Component
+@Log4j2
 public class LoadBalancerServiceImpl implements LoadBalancerService {
 	@Value("${zk.host}")
 	private String zookeeperHost;
@@ -34,6 +39,7 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 	private int noOfReplicas;
 
 	ConsistentHashing <Node> consistentHashing;
+	private final ExecutorService executorService = Executors.newFixedThreadPool(1);
 
 
 	@Override
@@ -54,16 +60,37 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 				new ExponentialBackoffRetry(1000, 3))) {
 			curatorFramework.start();
 			addChildNode(curatorFramework);
-			PathChildrenCache pathChildrenCache = new PathChildrenCache(curatorFramework, zookeeperNodePath, true);
-			pathChildrenCache.getListenable().addListener((client, event) -> {
-				String nodeData = new String(event.getData().getData());
-				if (event.getType() == PathChildrenCacheEvent.Type.CHILD_ADDED) {
-					addNodeToConsistentHashing(nodeData);
-				} else if (event.getType() == PathChildrenCacheEvent.Type.CHILD_REMOVED) {
-					removeNodeFromConsistentHashing(nodeData);
-				}
-			});
+			addNodeEventListener(curatorFramework);
+
+
 		}
+	}
+
+
+	private void addNodeEventListener (CuratorFramework curatorFramework) {
+		CuratorCache curatorCache = CuratorCache.build(curatorFramework, zookeeperNodePath);
+		curatorCache.start();
+
+
+		CuratorCacheListener listener = CuratorCacheListener.builder()
+															.forPathChildrenCache(zookeeperNodePath, curatorFramework, (client, event) -> {
+																log.info("Child event received");
+																ChildData                   data = event.getData();
+																PathChildrenCacheEvent.Type type = event.getType();
+																if (Objects.requireNonNull(type) == PathChildrenCacheEvent.Type.CHILD_ADDED) {
+																	String nodeData = new String(data.getData());
+																	log.info("Child node added: " + nodeData);
+																	addNodeToConsistentHashing(nodeData);
+																} else if (type == PathChildrenCacheEvent.Type.CHILD_REMOVED) {
+																	log.info("Child node removed");
+																	String nodeData = new String(data.getData());
+																	removeNodeFromConsistentHashing(nodeData);
+																}
+															})
+															.build();
+
+		// Add the listener to the CuratorCache
+		curatorCache.listenable().addListener(listener);
 	}
 
 
@@ -98,11 +125,12 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 
 	private ServerNode extractServerNode (String nodeData) {
 		String[] parts = nodeData.split(":");
-		String host = parts[0];
-		String port = parts[1];
+		String   host  = parts[0];
+		String   port  = parts[1];
 		return new ServerNode(host, Integer.parseInt(port));
 
 
 	}
+
 }
 
