@@ -1,6 +1,5 @@
 package com.ramij.loadbalancer.service;
 
-import com.ramij.hashing.ConsistentHashBuilder;
 import com.ramij.hashing.ConsistentHashing;
 import com.ramij.hashing.nodes.Node;
 import com.ramij.hashing.nodes.ServerNode;
@@ -9,14 +8,13 @@ import com.ramij.loadbalancer.exceptions.ApplicationNodeRetrievalException;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.log4j.Log4j2;
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.recipes.cache.ChildData;
 import org.apache.curator.framework.recipes.cache.CuratorCache;
 import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
 import org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent;
-import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.utils.ZKPaths;
 import org.apache.zookeeper.data.Stat;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -24,7 +22,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 @Service
 @Log4j2
@@ -39,10 +36,14 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 	@Value("${server.replicas}")
 	private int noOfReplicas;
 
+	@Autowired
 	ConsistentHashing <Node> consistentHashing;
-	private final ExecutorService executorService = Executors.newFixedThreadPool(1);
+	@Autowired
+	ExecutorService executorService;
 
+	@Autowired
 	CuratorFramework curatorFramework;
+
 
 
 	@Override
@@ -58,17 +59,8 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 
 	@PostConstruct
 	public void init () {
-		consistentHashing = ConsistentHashBuilder.create().addReplicas(noOfReplicas).build();
-		initializeCuratorFramework();
-		addChildNode(curatorFramework);
+		addExistingApplicationNodeToHashing();
 		addNodeEventListener();
-	}
-
-
-	private void initializeCuratorFramework () {
-		curatorFramework  = CuratorFrameworkFactory.newClient(zookeeperHost + ":" + zookeeperPort,
-				new ExponentialBackoffRetry(1000, 3));
-		curatorFramework.start();
 	}
 
 
@@ -79,7 +71,7 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 
 			CuratorCacheListener listener = CuratorCacheListener.builder()
 																.forPathChildrenCache(zookeeperNodePath, curatorFramework, (client, event) -> {
-																	log.info("Child event received");
+																	log.info("Child event received {}",event);
 																	ChildData                   data = event.getData();
 																	PathChildrenCacheEvent.Type type = event.getType();
 																	if (Objects.requireNonNull(type) == PathChildrenCacheEvent.Type.CHILD_ADDED) {
@@ -99,7 +91,7 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 	}
 
 
-	private void addChildNode (CuratorFramework curatorFramework) {
+	private void addExistingApplicationNodeToHashing () {
 		try {
 			List <String> children = curatorFramework.getChildren().forPath(zookeeperNodePath);
 			for (String child : children) {
