@@ -5,6 +5,7 @@ import com.ramij.hashing.ConsistentHashing;
 import com.ramij.hashing.nodes.Node;
 import com.ramij.hashing.nodes.ServerNode;
 import com.ramij.loadbalancer.constants.Constant;
+import com.ramij.loadbalancer.exceptions.ApplicationNodeRetrievalException;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.log4j.Log4j2;
 import org.apache.curator.framework.CuratorFramework;
@@ -41,6 +42,8 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 	ConsistentHashing <Node> consistentHashing;
 	private final ExecutorService executorService = Executors.newFixedThreadPool(1);
 
+	CuratorFramework curatorFramework;
+
 
 	@Override
 	public String getRedirectUrl (String requestId) {
@@ -56,41 +59,43 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 	@PostConstruct
 	public void init () {
 		consistentHashing = ConsistentHashBuilder.create().addReplicas(noOfReplicas).build();
-		try (CuratorFramework curatorFramework = CuratorFrameworkFactory.newClient(zookeeperHost + ":" + zookeeperPort,
-				new ExponentialBackoffRetry(1000, 3))) {
-			curatorFramework.start();
-			addChildNode(curatorFramework);
-			addNodeEventListener(curatorFramework);
-
-
-		}
+		initializeCuratorFramework();
+		addChildNode(curatorFramework);
+		addNodeEventListener();
 	}
 
 
-	private void addNodeEventListener (CuratorFramework curatorFramework) {
-		CuratorCache curatorCache = CuratorCache.build(curatorFramework, zookeeperNodePath);
-		curatorCache.start();
+	private void initializeCuratorFramework () {
+		curatorFramework  = CuratorFrameworkFactory.newClient(zookeeperHost + ":" + zookeeperPort,
+				new ExponentialBackoffRetry(1000, 3));
+		curatorFramework.start();
+	}
 
 
-		CuratorCacheListener listener = CuratorCacheListener.builder()
-															.forPathChildrenCache(zookeeperNodePath, curatorFramework, (client, event) -> {
-																log.info("Child event received");
-																ChildData                   data = event.getData();
-																PathChildrenCacheEvent.Type type = event.getType();
-																if (Objects.requireNonNull(type) == PathChildrenCacheEvent.Type.CHILD_ADDED) {
-																	String nodeData = new String(data.getData());
-																	log.info("Child node added: " + nodeData);
-																	addNodeToConsistentHashing(nodeData);
-																} else if (type == PathChildrenCacheEvent.Type.CHILD_REMOVED) {
-																	log.info("Child node removed");
-																	String nodeData = new String(data.getData());
-																	removeNodeFromConsistentHashing(nodeData);
-																}
-															})
-															.build();
+	private void addNodeEventListener () {
+		executorService.submit(() -> {
+			CuratorCache curatorCache = CuratorCache.build(curatorFramework, zookeeperNodePath);
+			curatorCache.start();
 
-		// Add the listener to the CuratorCache
-		curatorCache.listenable().addListener(listener);
+			CuratorCacheListener listener = CuratorCacheListener.builder()
+																.forPathChildrenCache(zookeeperNodePath, curatorFramework, (client, event) -> {
+																	log.info("Child event received");
+																	ChildData                   data = event.getData();
+																	PathChildrenCacheEvent.Type type = event.getType();
+																	if (Objects.requireNonNull(type) == PathChildrenCacheEvent.Type.CHILD_ADDED) {
+																		String nodeData = new String(data.getData());
+																		log.info("Child node added: " + nodeData);
+																		addNodeToConsistentHashing(nodeData);
+																	} else if (type == PathChildrenCacheEvent.Type.CHILD_REMOVED) {
+																		log.info("Child node removed");
+																		String nodeData = new String(data.getData());
+																		removeNodeFromConsistentHashing(nodeData);
+																	}
+																})
+																.build();
+
+			curatorCache.listenable().addListener(listener);
+		});
 	}
 
 
@@ -108,7 +113,8 @@ public class LoadBalancerServiceImpl implements LoadBalancerService {
 
 			}
 		} catch (Exception e) {
-			throw new RuntimeException(e);
+			log.error("Error in Retrieving childNode from zookeeper");
+			throw new ApplicationNodeRetrievalException(e.getMessage());
 		}
 	}
 
